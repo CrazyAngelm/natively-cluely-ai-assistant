@@ -600,10 +600,9 @@ const MockProviderSelectionAnim = () => {
     }, []);
 
     const options = [
-        { id: 'natively', label: 'Natively API', badge: '', recommended: true, desc: 'Ultra-fast low latency transcription', color: 'indigo', icon: <img src={nativelyIcon} className={`w-[14px] h-[14px] object-contain opacity-80 ${isLight ? '' : 'filter brightness-0 invert'}`} alt="Natively" /> },
+        { id: 'groq', label: 'Groq Whisper', badge: 'Saved', recommended: true, desc: 'Fast LPU whisper transcription', color: 'orange', icon: <Mic size={14} /> },
         { id: 'deepgram', label: 'Deepgram Nova-3', badge: 'Saved', recommended: false, desc: 'High-accuracy REST transcription', color: 'purple', icon: <Mic size={14} /> },
         { id: 'google', label: 'Google Cloud', badge: 'Saved', recommended: false, desc: 'gRPC streaming via Service Account', color: 'blue', icon: <Mic size={14} /> },
-        { id: 'groq', label: 'Groq Whisper', badge: '', recommended: false, desc: 'Fast LPU whisper transcription', color: 'orange', icon: <Mic size={14} /> },
         { id: 'azure', label: 'Azure Speech', badge: '', recommended: false, desc: 'Enterprise tier transcription', color: 'teal', icon: <Mic size={14} /> },
         { id: 'soniox', label: 'Soniox', badge: '', recommended: false, desc: 'Medical-grade transcription', color: 'cyan', icon: <Mic size={14} /> },
         { id: 'ibm', label: 'IBM Watson', badge: '', recommended: false, desc: 'Watson Speech-to-Text', color: 'indigo', icon: <Mic size={14} /> },
@@ -817,7 +816,7 @@ const SetupGuide = () => {
         },
         {
             title: 'Set Up Audio',
-            desc: 'Open Settings → Audio and select Natively API, or paste a Deepgram or Google key.',
+            desc: 'Open Settings → Audio and select Groq, Deepgram, Google, OpenAI, or Local Whisper.',
         },
         {
             title: 'Connect an AI Model',
@@ -911,7 +910,7 @@ export const HelpSettings: React.FC<{ onNavigate?: (tab: string) => void }> = ({
 
                 {onNavigate && (
                     <div
-                        onClick={() => onNavigate('natively-api')}
+                        onClick={() => onNavigate('ai-providers')}
                         className="mb-8 group cursor-pointer bg-bg-card hover:bg-bg-item-surface border border-border-subtle hover:border-white transition-all rounded-2xl flex items-center justify-between p-4 px-5 shadow-sm hover:shadow-md"
                     >
                         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 flex-1">
@@ -919,14 +918,14 @@ export const HelpSettings: React.FC<{ onNavigate?: (tab: string) => void }> = ({
                                 <Zap className="w-5 h-5 text-text-primary group-hover:text-white transition-colors" fill="currentColor" />
                             </div>
                             <div className="flex-1">
-                                <h4 className="text-[14px] font-bold text-text-primary mb-0.5">Want to skip the manual setup?</h4>
+                                <h4 className="text-[14px] font-bold text-text-primary mb-0.5">Configure your providers</h4>
                                 <p className="text-[13px] text-text-secondary">
-                                    Use the <span className="font-semibold text-text-primary">Natively API</span> for an out-of-the-box experience. One-click zero-configuration usage.
+                                    Add company/OpenAI-compatible endpoints, custom cURL providers, local models, or BYOK cloud keys.
                                 </p>
                             </div>
                         </div>
                         <div className="hidden sm:flex self-center ml-4 px-3 py-1.5 rounded-lg bg-text-primary text-bg-main text-[11px] font-bold items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity whitespace-nowrap shrink-0">
-                            Enable Now <ArrowRight size={12} />
+                            Open Providers <ArrowRight size={12} />
                         </div>
                     </div>
                 )}
@@ -1512,13 +1511,13 @@ export const HelpSettings: React.FC<{ onNavigate?: (tab: string) => void }> = ({
 
                                 <div className="p-4 rounded-xl border bg-accent-primary/5 border-border-subtle">
                                     <h4 className="font-semibold text-sm mb-2 text-text-primary flex items-center gap-2">
-                                        <CreditCard className="w-4 h-4 text-accent-primary" /> Pro Requirement
+                                        <CreditCard className="w-4 h-4 text-accent-primary" /> Company Fork Full Access
                                     </h4>
                                     <p className="text-[11px] text-text-secondary mb-2">
-                                        This is a Natively Pro feature.
+                                        Profile Intelligence is enabled locally in this build.
                                     </p>
                                     <ol className="text-[11px] text-text-secondary space-y-1 list-decimal pl-4 mb-0">
-                                        <li>Get a License at <button onClick={() => { (window as any).electronAPI?.openExternal('https://natively.software/') }} className="text-accent-primary hover:underline font-semibold">natively.software</button></li>
+                                        <li>Configure your AI/search providers in Settings → AI Providers.</li>
                                         <li>Drop your Resume PDF in the UI to activate injection.</li>
                                     </ol>
                                 </div>
@@ -1618,7 +1617,7 @@ export const HelpSettings: React.FC<{ onNavigate?: (tab: string) => void }> = ({
                                     <ul className="text-[11px] text-text-secondary space-y-1 list-disc pl-4">
                                         <li>Click the <strong>grid icon</strong> in the Launcher header</li>
                                         <li>Or click the grid icon in the main interface toolbar</li>
-                                        <li>Requires a Natively Pro license</li>
+                                        <li>Enabled in this company full build</li>
                                     </ul>
                                 </div>
                                 <div className="p-4 rounded-xl border bg-bg-item-surface border-border-subtle">
@@ -1656,7 +1655,7 @@ export const HelpSettings: React.FC<{ onNavigate?: (tab: string) => void }> = ({
                                 <Star size={14} /> Pro Feature
                             </h4>
                             <p className="text-[11px] text-text-secondary leading-relaxed mb-0">
-                                Modes are locked behind Natively Pro. Free and trial users see only the General mode. Activate a license via <strong>Settings → Natively API</strong> to unlock all seven modes.
+                                Modes are enabled in this company full build. Configure your model and STT providers in <strong>Settings → AI Providers</strong> before using mode-specific guidance.
                             </p>
                         </div>
                     </div>

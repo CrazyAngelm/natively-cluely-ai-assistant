@@ -8,12 +8,11 @@
 // telemetry. The first provider that returns non-empty output wins.
 //
 // Provider order (vision_first / vision_only):
-//   1. Natively API (if configured)
-//   2. OpenAI vision (if configured)
-//   3. Gemini Flash vision (if configured)
-//   4. Claude vision (if configured)
-//   5. Gemini Pro vision (if configured)
-//   6. Groq Llama-4-Scout vision (if configured)
+//   1. OpenAI vision (if configured)
+//   2. Gemini Flash vision (if configured)
+//   3. Claude vision (if configured)
+//   4. Gemini Pro vision (if configured)
+//   5. Groq Llama-4-Scout vision (if configured)
 //   7. Ollama local vision (if configured AND the active Ollama model is vision-capable)
 //   8. Codex CLI vision (if enabled AND CLI supports vision)
 //   9. Custom cURL provider (only if multimodal=true AND screenshots scope enabled)
@@ -83,7 +82,7 @@ export interface VisionFallbackResult {
 // substitute fake providers without bringing up the whole LLM stack.
 export interface VisionProviderConfig {
   id: string;                                     // unique provider id, used in telemetry
-  displayName: string;                            // e.g. "Natively API"
+  displayName: string;
   modelId?: string;                               // resolved model id for telemetry
   isLocal: boolean;                               // true for ollama / codex local / approved-local-custom
   isConfigured: boolean;                          // API key / runtime available

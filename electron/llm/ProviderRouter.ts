@@ -1,4 +1,4 @@
-export type LLMProviderId = 'natively' | 'groq' | 'codex' | 'gemini_flash' | 'gemini_pro' | 'openai' | 'claude';
+export type LLMProviderId = 'groq' | 'codex' | 'gemini_flash' | 'gemini_pro' | 'openai' | 'claude';
 export type ProviderCapability = 'chat' | 'stream_chat' | 'structured' | 'vision';
 export type ProviderAttemptStatus = 'available' | 'unavailable';
 export type ProviderUnavailableReason = 'missing_api_key' | 'missing_config' | 'unsupported_capability' | 'disabled';
@@ -27,7 +27,6 @@ export function assertProviderDataScopes(provider: string, scopes: ProviderDataS
 }
 
 export interface ProviderAvailabilityState {
-    hasNatively?: boolean;
     hasGroq?: boolean;
     groqDisabled?: boolean;
     hasCodex?: boolean;
@@ -37,7 +36,6 @@ export interface ProviderAvailabilityState {
 }
 
 export interface ProviderModelState {
-    natively?: string;
     groq?: string;
     codex?: string;
     geminiFlash?: string;
@@ -89,14 +87,6 @@ export function routeLLMProviders(options: ProviderRouteOptions): ProviderAttemp
     const models = { ...options.models };
     const capability = options.capability;
 
-    const natively: ProviderSpec = {
-        provider: 'natively',
-        name: 'Natively API',
-        model: models.natively,
-        available: Boolean(availability.hasNatively),
-        unavailableReason: 'missing_api_key',
-        supports: ['chat', 'stream_chat', 'vision'],
-    };
     const groq: ProviderSpec = {
         provider: 'groq',
         name: `Groq (${models.groq ?? 'default'})`,
@@ -147,8 +137,8 @@ export function routeLLMProviders(options: ProviderRouteOptions): ProviderAttemp
     };
 
     const orderedSpecs = options.multimodal
-        ? [natively, codex, openai, geminiFlash, claude, geminiPro, groq]
-        : [natively, groq, codex, geminiFlash, geminiPro, openai, claude];
+        ? [codex, openai, geminiFlash, claude, geminiPro, groq]
+        : [groq, codex, geminiFlash, geminiPro, openai, claude];
 
     const deniedScopes = getDeniedDataScopes(options.dataScopes, options.scopePolicy);
 
@@ -265,7 +255,7 @@ export class ProviderRouter {
     constructor(circuitConfig?: Partial<CircuitBreakerConfig>) {
         const config = { ...this.defaultCircuitConfig, ...circuitConfig };
         // Initialize circuit breakers for each provider
-        ['gemini', 'groq', 'openai', 'claude', 'natively', 'codex'].forEach(provider => {
+        ['gemini', 'groq', 'openai', 'claude', 'codex'].forEach(provider => {
             this.circuitBreakers.set(provider, new CircuitBreaker(provider, config));
         });
     }
@@ -287,7 +277,7 @@ export class ProviderRouter {
 
         // Rule 2: Check circuit breakers and skip unhealthy providers
         const availableProviders = this.filterHealthyProviders(
-            ['gemini', 'groq', 'openai', 'claude', 'natively', 'codex'],
+            ['gemini', 'groq', 'openai', 'claude', 'codex'],
             health
         );
 
@@ -383,7 +373,6 @@ export class ProviderRouter {
             'groq': 'llama-3.3-70b-versatile',
             'openai': 'gpt-5.4',
             'claude': 'claude-sonnet-4-6',
-            'natively': 'default',
             'codex': 'default'
         };
         return models[provider] || 'default';

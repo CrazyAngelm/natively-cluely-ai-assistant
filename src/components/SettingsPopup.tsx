@@ -30,7 +30,6 @@ const SettingsPopup = () => {
                     groq: !!creds.hasGroqKey,
                     openai: !!creds.hasOpenaiKey,
                     claude: !!creds.hasClaudeKey,
-                    natively: !!creds.hasNativelyKey
                 });
             }
         } catch (e) {
@@ -222,8 +221,8 @@ const SettingsPopup = () => {
                 </div>
 
 
-                {/* Groq (Fast Text) Toggle — enabled with Groq key OR Natively API key */}
-                <div className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group ${!(hasStoredKey.groq || hasStoredKey.natively) ? 'opacity-50 grayscale cursor-not-allowed' : `${itemHoverClass} cursor-default`}`} title={!(hasStoredKey.groq || hasStoredKey.natively) ? "Requires Groq or Natively API key" : ""}>
+                {/* Groq (Fast Text) Toggle — enabled with Groq key */}
+                <div className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group ${!hasStoredKey.groq ? 'opacity-50 grayscale cursor-not-allowed' : `${itemHoverClass} cursor-default`}`} title={!hasStoredKey.groq ? "Requires Groq key" : ""}>
                     <div className="flex items-center gap-3">
                         <Zap
                             className={`w-4 h-4 transition-colors ${useGroqFastText ? 'text-orange-500' : iconInactiveClass}`}
@@ -233,11 +232,11 @@ const SettingsPopup = () => {
                     </div>
                     <button
                         onClick={() => {
-                            if (!(hasStoredKey.groq || hasStoredKey.natively)) return;
+                            if (!hasStoredKey.groq) return;
                             setUseGroqFastText(!useGroqFastText);
                         }}
                         className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${useGroqFastText ? 'bg-orange-500 shadow-[0_2px_10px_rgba(249,115,22,0.3)]' : defaultToggleTrackClass}`}
-                        disabled={!(hasStoredKey.groq || hasStoredKey.natively)}
+                        disabled={!hasStoredKey.groq}
                     >
                         <div className={`w-[15px] h-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${useGroqFastText ? 'translate-x-[12px]' : 'translate-x-0'}`} />
                     </button>

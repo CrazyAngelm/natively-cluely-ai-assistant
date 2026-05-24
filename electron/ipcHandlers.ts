@@ -992,7 +992,6 @@ export function initializeIpcHandlers(appState: AppState): void {
   safeHandle("set-natively-api-key", async () => {
     const { CredentialsManager } = require('./services/CredentialsManager');
     CredentialsManager.getInstance().setNativelyApiKey('');
-    appState.processingHelper.getLLMHelper().setNativelyKey(null);
     return { success: true };
   });
 

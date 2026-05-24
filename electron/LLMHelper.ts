@@ -75,7 +75,6 @@ export class LLMHelper {
   private personaPrompt: string = '';
   private aiResponseLanguage: string = 'auto';
   private sttLanguage: string = 'english-us';
-  private nativelyKey: string | null = null;
 
   // Rate limiters per provider to prevent 429 errors on free tiers
   private rateLimiters: ReturnType<typeof createProviderRateLimiters>;
@@ -209,10 +208,6 @@ export class LLMHelper {
     console.log("[LLMHelper] Claude API Key updated.");
   }
 
-  public setNativelyKey(_key: string | null): void {
-    this.nativelyKey = null;
-  }
-
   /**
    * Enable or disable local-only mode.
    * When enabled, cloud providers (Gemini, OpenAI, Claude, Groq) will be blocked.
@@ -225,10 +220,6 @@ export class LLMHelper {
 
   public isLocalOnly(): boolean {
     return this.isLocalOnlyMode;
-  }
-
-  private hasNatively(): boolean {
-    return false;
   }
 
   /**
@@ -263,14 +254,12 @@ export class LLMHelper {
   // these named entry points so the surface stays auditable.
 
   public async runVisionRequest(
-    providerId: 'natively' | 'openai' | 'claude' | 'gemini_flash' | 'gemini_pro' | 'groq_scout' | 'custom',
+    providerId: 'openai' | 'claude' | 'gemini_flash' | 'gemini_pro' | 'groq_scout' | 'custom',
     userPrompt: string,
     systemPrompt: string,
     imagePath: string,
   ): Promise<string> {
     switch (providerId) {
-      case 'natively':
-        throw new Error('Original Natively vision provider is disabled in company fork. Configure a custom or OpenAI-compatible provider.');
       case 'openai':
         return this.generateWithOpenai(userPrompt, systemPrompt, [imagePath]);
       case 'claude':
@@ -325,7 +314,6 @@ export class LLMHelper {
     this.groqApiKey = null;
     this.openaiApiKey = null;
     this.claudeApiKey = null;
-    this.nativelyKey = null;
     this.client = null;
     this.groqClient = null;
     this.openaiClient = null;
@@ -1352,8 +1340,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       // selections aren't silently routed to Groq. See streamChat() for matching gate.
       const fastModeAppliesNS = this.groqFastTextMode && !isMultimodal && (
         this.codexCliConfig.enabled ||
-        this.isGroqModel(this.currentModelId) ||
-        this.currentModelId === 'natively'
+        this.isGroqModel(this.currentModelId)
       );
       if (fastModeAppliesNS && this.codexCliConfig.enabled) {
         console.log(`[LLMHelper] ⚡️ Fast Text Mode Active. Routing to Codex CLI...`);
@@ -1408,19 +1395,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       }
 
       // --- Direct Routing based on Selected Model ---
-      if (this.currentModelId === 'natively') {
-        const { CredentialsManager } = require('./services/CredentialsManager');
-        const nativelyKey = CredentialsManager.getInstance().getNativelyApiKey();
-        if (nativelyKey) {
-          try {
-            return await this.generateWithNatively(userContent, openaiSystemPrompt, imagePaths);
-          } catch (err: any) {
-            console.warn('[LLMHelper] Natively API failed in chatWithGemini, falling back to Gemini:', err.message);
-            // Fall through to smart dynamic fallback below
-          }
-        }
-        // No key or call failed — fall through to default routing
-      }
       if (this.isOpenAiModel(this.currentModelId) && this.openaiClient) {
         return await this.generateWithOpenai(userContent, openaiSystemPrompt, imagePaths);
       }
@@ -1457,7 +1431,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         capability: 'chat',
         multimodal: isMultimodal,
         availability: {
-          hasNatively: this.hasNatively(),
           hasGroq: Boolean(this.groqClient),
           groqDisabled: this._groqLocalDisabled,
           hasCodex: this.codexCliConfig.enabled,
@@ -1480,9 +1453,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       for (const routedProvider of routedProviders) {
         if (routedProvider.status !== 'available') continue;
         switch (routedProvider.provider) {
-          case 'natively':
-            providers.push({ name: routedProvider.name, execute: () => this.generateWithNatively(userContent, openaiSystemPrompt, isMultimodal ? imagePaths : undefined) });
-            break;
           case 'groq':
             if (isMultimodal) {
               providers.push({ name: `Groq (meta-llama/llama-4-scout-17b-16e-instruct)`, execute: () => this.generateWithGroqMultimodal(userContent, imagePaths!, openaiSystemPrompt) });
@@ -1668,19 +1638,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       });
     }
 
-    // Priority 8: Natively API — used when no other provider is available, or as final fallback
-    const nativelyKeyForStructured = this.nativelyKey || (() => {
-      try { return require('./services/CredentialsManager').CredentialsManager.getInstance().getNativelyApiKey() || null; } catch { return null; }
-    })();
-    if (nativelyKeyForStructured) {
-      providers.push({
-        name: 'Natively API',
-        execute: () => this.generateWithNatively(message)
-      });
-    }
-
     if (providers.length === 0) {
-      throw new Error('No reasoning model available. Please configure an API key (OpenAI, Claude, Gemini, Groq, Natively) or a custom provider.');
+      throw new Error('No reasoning model available. Please configure an API key (OpenAI, Claude, Gemini, Groq) or a custom provider.');
     }
 
     const MAX_ROTATIONS = 3;
@@ -1760,13 +1719,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     });
 
     return response.choices[0]?.message?.content || "";
-  }
-
-  /**
-   * Non-streaming OpenAI generation with proper system/user separation
-   */
-  private async generateWithNatively(_userMessage: string, _systemPrompt?: string, _imagePaths?: string[]): Promise<string> {
-    throw new Error('Original Natively AI backend is disabled in company fork. Configure a custom, OpenAI-compatible, Ollama, or Codex provider.');
   }
 
   /**
@@ -2507,10 +2459,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     const textGroq = this.modelVersionManager.getTextTieredModels(TextModelFamily.GROQ).tier1;
 
     if (isMultimodal) {
-      // MULTIMODAL PROVIDER ORDER: [Natively] -> Codex CLI -> OpenAI -> Gemini Flash -> Claude -> Gemini Pro -> Groq Scout 4
-      if (this.hasNatively()) {
-        providers.push({ name: 'Natively API', execute: () => this.streamWithNatively(userContent, openaiSystemPrompt, imagePaths) });
-      }
+      // MULTIMODAL PROVIDER ORDER: Codex CLI -> OpenAI -> Gemini Flash -> Claude -> Gemini Pro -> Groq Scout 4
       if (this.codexCliConfig.enabled) {
         providers.push({ name: `Codex CLI (${this.codexCliConfig.model})`, execute: () => this.streamWithCodexCli(userContent, openaiSystemPrompt, false, imagePaths) });
       }
@@ -2532,10 +2481,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         providers.push({ name: `Groq (meta-llama/llama-4-scout-17b-16e-instruct)`, execute: () => this.streamWithGroqMultimodal(userContent, imagePaths!, openaiSystemPrompt) });
       }
     } else {
-      // TEXT-ONLY PROVIDER ORDER: [Natively] -> Groq -> Codex CLI -> OpenAI -> Claude -> Gemini Flash -> Gemini Pro
-      if (this.hasNatively()) {
-        providers.push({ name: 'Natively API', execute: () => this.streamWithNatively(userContent, openaiSystemPrompt) });
-      }
+      // TEXT-ONLY PROVIDER ORDER: Groq -> Codex CLI -> OpenAI -> Claude -> Gemini Flash -> Gemini Pro
       if (this.groqClient) {
         // CACHE: pass system separately so Groq prefix-cache hits across turns.
         providers.push({ name: `Groq (${textGroq})`, execute: () => this.streamWithGroq(userContent, textGroq, groqSystemForCache) });
@@ -2566,12 +2512,11 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     // Ensure the model the user selected handles the request first
     // before falling back to others.
     // ============================================================
-    const currentFamilyLabel = this.currentModelId === 'natively' ? 'Natively'
-      : this.isClaudeModel(this.currentModelId) ? 'Claude'
-        : this.isOpenAiModel(this.currentModelId) ? 'OpenAI'
-          : this.isGroqModel(this.currentModelId) ? 'Groq'
-            : this.isGeminiModel(this.currentModelId) ? 'Gemini'
-              : '';
+    const currentFamilyLabel = this.isClaudeModel(this.currentModelId) ? 'Claude'
+      : this.isOpenAiModel(this.currentModelId) ? 'OpenAI'
+        : this.isGroqModel(this.currentModelId) ? 'Groq'
+          : this.isGeminiModel(this.currentModelId) ? 'Gemini'
+            : '';
 
     if (currentFamilyLabel) {
       providers.sort((a, b) => {
@@ -2579,16 +2524,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         if (!a.name.startsWith(currentFamilyLabel) && b.name.startsWith(currentFamilyLabel)) return 1;
         return 0;
       });
-    }
-
-    // Natively is always first when configured, regardless of which model is selected.
-    // The sort above may have displaced it — restore it to position 0.
-    if (this.hasNatively() && providers[0]?.name !== 'Natively API') {
-      const idx = providers.findIndex(p => p.name === 'Natively API');
-      if (idx > 0) {
-        const [entry] = providers.splice(idx, 1);
-        providers.unshift(entry);
-      }
     }
 
     // ============================================================
@@ -2766,7 +2701,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       : message;
 
     // GROQ FAST TEXT OVERRIDE (Text-Only)
-    // Two paths: local Groq key → call Groq directly; Natively API only → send fast_mode:true
     // to the server so it routes to its internal Groq pool (llama-3.3-70b-versatile).
     //
     // Gate: only short-circuit to fast paths when the user's picked model is one of
@@ -2774,8 +2708,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     // in the UI is silently ignored because fast-mode returns before model routing runs.
     const fastModeApplies = this.groqFastTextMode && !isMultimodal && (
       this.codexCliConfig.enabled ||
-      this.isGroqModel(this.currentModelId) ||
-      this.currentModelId === 'natively'
+      this.isGroqModel(this.currentModelId)
     );
     if (fastModeApplies) {
       if (this.codexCliConfig.enabled) {
@@ -2804,17 +2737,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
             this._groqLocalDisabled = true;
             console.warn("[LLMHelper] Local Groq key rejected (401) — disabling local Groq for the rest of this session. Re-enable by saving a new key in Settings.");
           }
-        }
-        // Local Groq failed — fall through to Natively if available
-      }
-      if (this.hasNatively()) {
-        // streamWithNatively → generateWithNatively → sends fast_mode:true → server Groq pool
-        console.log(`[LLMHelper] ⚡️ Groq Fast Text Mode Active (Streaming). Routing to Natively server Groq pool...`);
-        try {
-          yield* this.streamWithNatively(userContent, finalSystemPrompt);
-          return;
-        } catch (e: any) {
-          console.warn("[LLMHelper] Natively fast-mode failed, falling back:", e.message);
         }
       }
     }
@@ -2893,42 +2815,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       return;
     }
 
-    // 3b. Natively API
-    if (this.currentModelId === 'natively') {
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      const nativelyKey = CredentialsManager.getInstance().getNativelyApiKey();
-      if (nativelyKey) {
-        try {
-          const response = await this.generateWithNatively(userContent, finalSystemPrompt, imagePaths);
-          yield response;
-          return;
-        } catch (err: any) {
-          console.warn('[LLMHelper] Natively API failed in streamChat, trying Groq fallback:', err.message);
-          // Try Groq before Gemini — Groq key is more commonly available
-          if (this.groqClient) {
-            try {
-              if (isMultimodal && imagePaths) {
-                const groqSystem = systemPromptOverride || OPENAI_SYSTEM_PROMPT;
-                const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
-                yield* this.streamWithGroqMultimodal(userContent, imagePaths, finalGroqSystem);
-              } else {
-                const groqSystem = systemPromptOverride ? baseSystemPrompt : GROQ_SYSTEM_PROMPT;
-                const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
-                // intentional: emergency fallback waterfall — use stable GROQ_MODEL baseline, not currentModelId
-                // CACHE: pass system separately so Groq prefix-cache hits across turns.
-                yield* this.streamWithGroq(userContent, GROQ_MODEL, finalGroqSystem);
-              }
-              return;
-            } catch (groqErr: any) {
-              console.warn('[LLMHelper] Groq fallback also failed, trying Gemini:', groqErr.message);
-            }
-          }
-          // Fall through to Gemini
-        }
-      }
-      // No key or all fallbacks failed — fall through to Gemini
-    }
-
     // 4. Gemini Routing & Fallback
     if (this.client) {
       // CACHE: pass system prompt via `systemInstruction` so it is structurally
@@ -2945,26 +2831,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       return;
     }
 
-    // 5. Last-resort: Natively API (if user has a key but no cloud provider configured)
-    if (this.hasNatively()) {
-      try {
-        yield* this.streamWithNatively(userContent, finalSystemPrompt, imagePaths);
-        return;
-      } catch (e: any) {
-        console.warn('[LLMHelper] Natively last-resort fallback failed:', e.message);
-      }
-    }
-
     throw new Error("No AI provider configured. Please add at least one API key in Settings.");
-  }
-
-  /**
-   * Fake-stream for Natively API (non-streaming endpoint).
-   * Yields the full response in small word-batches so the UI typing effect still plays.
-   * Throws on empty response so the fallback chain tries the next provider.
-   */
-  private async * streamWithNatively(_userContent: string, _systemPrompt?: string, _imagePaths?: string[]): AsyncGenerator<string, void, unknown> {
-    throw new Error('Original Natively AI backend is disabled in company fork. Configure a custom, OpenAI-compatible, Ollama, or Codex provider.');
   }
 
   /**
@@ -4009,7 +3876,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
    * Robust Meeting Summary Generation
    * Strategy:
    * 0. Custom / cURL Provider (if user selected one — always takes priority)
-   * 1. Natively API (if configured)
+   * 1. Codex CLI (if enabled)
    * 2. Groq (if context text < 100k tokens approx)
    * 3. Gemini Flash (Retry 2x)
    * 4. Gemini Pro (Retry 5x)
@@ -4045,26 +3912,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         }
       } catch (e: any) {
         console.warn(`[LLMHelper] ⚠️ Custom provider summary failed: ${e.message}. Falling back...`);
-      }
-    }
-
-    // ATTEMPT 1: Natively API (if configured — first in chain)
-    // Inner fetch timeout: 8s (AbortSignal.timeout in generateWithNatively).
-    // Outer safety net: 10s — covers JSON parsing + any overhead after the fetch resolves.
-    if (this.hasNatively()) {
-      try {
-        console.log(`[LLMHelper] Attempting Natively API for summary...`);
-        const text = await this.withTimeout(
-          this.generateWithNatively(`Context:\n${context}`, systemPrompt),
-          10000,
-          'Natively Summary'
-        );
-        if (text.trim().length > 0) {
-          console.log(`[LLMHelper] ✅ Natively API summary generated successfully.`);
-          return this.processResponse(text);
-        }
-      } catch (e: any) {
-        console.warn(`[LLMHelper] ⚠️ Natively API summary failed: ${e.message}. Falling back...`);
       }
     }
 

@@ -756,14 +756,7 @@ async function buildHelper(): Promise<any> {
   const groqKey = process.env.GROQ_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
   const claudeKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
-  const nativelyKey = process.env.NATIVELY_API_KEY;
   const helper = new LLMHelper(geminiKey, false, undefined, undefined, groqKey, openaiKey, claudeKey);
-
-  if (nativelyKey) {
-    helper.setNativelyKey(nativelyKey);
-    helper.setModel('natively');
-    return helper;
-  }
 
   const model = process.env.NATIVELY_EVAL_MODEL;
   if (model) helper.setModel(model);
