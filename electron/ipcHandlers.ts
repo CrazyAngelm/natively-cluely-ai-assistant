@@ -3212,8 +3212,8 @@ export function initializeIpcHandlers(appState: AppState): void {
           return { fallback: true };
         }
 
-        console.error("[RAG] Query error:", error);
-        event.sender.send("rag:stream-error", { meetingId, error: msg });
+        console.error("[RAG] Query error, falling back to regular chat:", error);
+        return { fallback: true };
       }
       return { success: false, error: error.message };
     } finally {
@@ -3261,8 +3261,8 @@ export function initializeIpcHandlers(appState: AppState): void {
           console.log(`[RAG] JIT query failed with '${msg}', falling back to regular live chat`);
           return { fallback: true };
         }
-        console.error("[RAG] Live query error:", error);
-        event.sender.send("rag:stream-error", { live: true, error: msg });
+        console.error("[RAG] Live query error, falling back to regular live chat:", error);
+        return { fallback: true };
       }
       return { success: false, error: error.message };
     } finally {

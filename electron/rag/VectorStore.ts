@@ -4,6 +4,7 @@
 
 import Database from 'better-sqlite3';
 import { Worker } from 'worker_threads';
+import fs from 'fs';
 import path from 'path';
 import { Chunk } from './SemanticChunker';
 import { DatabaseManager } from '../db/DatabaseManager';
@@ -49,8 +50,11 @@ export class VectorStore {
      */
     private getWorker(): Worker {
         if (!this.worker) {
-            // Resolve the compiled worker script path (dist-electron output)
-            const workerPath = path.join(__dirname, 'vectorSearchWorker.js');
+            const workerCandidates = [
+                path.join(__dirname, 'vectorSearchWorker.js'),
+                path.join(__dirname, 'rag', 'vectorSearchWorker.js'),
+            ];
+            const workerPath = workerCandidates.find((candidate) => fs.existsSync(candidate)) || workerCandidates[0];
             this.worker = new Worker(workerPath);
 
             this.worker.on('message', (msg: { type: string; requestId: number; data?: any; error?: string }) => {
@@ -342,9 +346,38 @@ export class VectorStore {
                 limit
             }, [flatEmbeddings.buffer]); // Transfer buffer to avoid copy
         } catch (e) {
-            console.error('[VectorStore] JS worker search failed:', e);
-            throw e;
+            console.error('[VectorStore] JS worker search failed, using sync fallback:', e);
+            return this.searchSimilarJSSync(queryEmbedding, rowsWithEmbeddingBuffer, dim, minSimilarity, limit);
         }
+    }
+
+    private searchSimilarJSSync(
+        queryEmbedding: number[],
+        rows: any[],
+        dim: number,
+        minSimilarity: number,
+        limit: number
+    ): ScoredChunk[] {
+        const scored: ScoredChunk[] = [];
+        for (const row of rows) {
+            let dot = 0;
+            let normA = 0;
+            let normB = 0;
+            const buffer = row.buffer as Buffer;
+            for (let i = 0; i < dim; i++) {
+                const a = queryEmbedding[i];
+                const b = buffer.readFloatLE(i * 4);
+                dot += a * b;
+                normA += a * a;
+                normB += b * b;
+            }
+            const denom = Math.sqrt(normA) * Math.sqrt(normB);
+            const similarity = denom === 0 ? 0 : dot / denom;
+            if (similarity >= minSimilarity) {
+                scored.push({ ...this.rowToChunk(row), similarity });
+            }
+        }
+        return scored.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
     }
 
     /**
@@ -557,9 +590,38 @@ export class VectorStore {
                 limit
             }, [flatEmbeddings.buffer]);
         } catch (e) {
-             console.error('[VectorStore] JS worker summary search failed:', e);
-             throw e;
+             console.error('[VectorStore] JS worker summary search failed, using sync fallback:', e);
+             return this.searchSummariesJSSync(queryEmbedding, rowsWithEmbeddingBuffer, dim, limit);
         }
+    }
+
+    private searchSummariesJSSync(
+        queryEmbedding: number[],
+        rows: any[],
+        dim: number,
+        limit: number
+    ): { meetingId: string; summaryText: string; similarity: number }[] {
+        const scored: { meetingId: string; summaryText: string; similarity: number }[] = [];
+        for (const row of rows) {
+            let dot = 0;
+            let normA = 0;
+            let normB = 0;
+            const buffer = row.buffer as Buffer;
+            for (let i = 0; i < dim; i++) {
+                const a = queryEmbedding[i];
+                const b = buffer.readFloatLE(i * 4);
+                dot += a * b;
+                normA += a * a;
+                normB += b * b;
+            }
+            const denom = Math.sqrt(normA) * Math.sqrt(normB);
+            scored.push({
+                meetingId: row.meeting_id,
+                summaryText: row.summary_text,
+                similarity: denom === 0 ? 0 : dot / denom,
+            });
+        }
+        return scored.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
     }
 
     // ============================================
