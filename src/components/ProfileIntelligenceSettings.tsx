@@ -1138,8 +1138,8 @@ export function ProfileIntelligenceSettings({ onClose }: { onClose: () => void }
                                                     <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20 text-[11px] text-amber-400 leading-relaxed">
                                                         <span className="shrink-0 mt-[1px]">⚠</span>
                                                         <span>
-                                                            Web search credits exhausted for this month — showing AI-only research instead.
-                                                            Resets next billing cycle or <span className="underline cursor-pointer" onClick={() => (window.electronAPI as any)?.openExternal?.('https://checkout.dodopayments.com/buy/pdt_0NbFixGmD8CSeawb5qvVl')}>upgrade your plan</span>.
+                                                            Search provider unavailable — showing AI-only research instead.
+                                                            Add a Tavily or company search provider key in settings for live web research.
                                                         </span>
                                                     </div>
                                                 )}

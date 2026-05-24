@@ -27,7 +27,6 @@ import type { TranscriptTurn } from "./llm/transcriptCleaner"
 import { deepVariableReplacer, getByPath, injectImageIntoMessages } from './utils/curlUtils';
 import curl2Json from "@bany/curl-to-json";
 import { CustomProvider, CurlProvider } from './services/CredentialsManager';
-import { TRIAL_SENTINEL_KEY } from './config/constants';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import axios from 'axios';
@@ -210,9 +209,8 @@ export class LLMHelper {
     console.log("[LLMHelper] Claude API Key updated.");
   }
 
-  public setNativelyKey(key: string | null): void {
-    this.nativelyKey = key || null;
-    console.log(`[LLMHelper] Natively key ${key ? 'set' : 'cleared'}`);
+  public setNativelyKey(_key: string | null): void {
+    this.nativelyKey = null;
   }
 
   /**
@@ -230,7 +228,7 @@ export class LLMHelper {
   }
 
   private hasNatively(): boolean {
-    return !!this.nativelyKey;
+    return false;
   }
 
   /**
@@ -272,7 +270,7 @@ export class LLMHelper {
   ): Promise<string> {
     switch (providerId) {
       case 'natively':
-        return this.generateWithNatively(userPrompt, systemPrompt, [imagePath]);
+        throw new Error('Original Natively vision provider is disabled in company fork. Configure a custom or OpenAI-compatible provider.');
       case 'openai':
         return this.generateWithOpenai(userPrompt, systemPrompt, [imagePath]);
       case 'claude':
@@ -436,6 +434,7 @@ export class LLMHelper {
     if (modelId === 'gemini-pro') targetModelId = GEMINI_PRO_MODEL;
     if (modelId === 'claude') targetModelId = CLAUDE_MODEL;
     if (modelId === 'llama') targetModelId = GROQ_MODEL;
+    if (targetModelId === 'natively') targetModelId = '';
 
     if (targetModelId.startsWith('ollama-')) {
       this.useOllama = true;
@@ -1766,91 +1765,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
   /**
    * Non-streaming OpenAI generation with proper system/user separation
    */
-  /**
-   * Routes AI generation through the Natively API backend (Gemini-powered).
-   */
-  private async generateWithNatively(userMessage: string, systemPrompt?: string, imagePaths?: string[]): Promise<string> {
-    this.assertOutboundScopes('natively', userMessage, imagePaths);
-    // Prefer the in-memory field; fall back to CredentialsManager for the direct-routing path
-    // where currentModelId === 'natively' but setNativelyKey() wasn't called yet.
-    let nativelyKey = this.nativelyKey;
-    if (!nativelyKey) {
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      nativelyKey = CredentialsManager.getInstance().getNativelyApiKey() || null;
-    }
-    if (!nativelyKey) throw new Error('Natively API key not set');
-
-    const endpointUrl = 'https://api.natively.software/v1/chat';
-    // When the key is the trial sentinel, authenticate with the real trial token
-    // instead — the server validates x-trial-token, not __trial__ as an API key.
-    const headers: any = { 'Content-Type': 'application/json' };
-    if (nativelyKey === TRIAL_SENTINEL_KEY) {
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      const trialToken = CredentialsManager.getInstance().getTrialToken();
-      if (!trialToken) throw new Error('Trial token not found');
-      headers['x-trial-token'] = trialToken;
-    } else {
-      headers['x-natively-key'] = nativelyKey;
-    }
-
-    const body: any = { messages: [{ role: 'user', content: userMessage }] };
-
-    // Signal fast mode so the server routes to Groq Llama 3.3 (text-only, key-rotated).
-    // Only sent for text-only requests — server ignores it when images are present.
-    if (this.groqFastTextMode) body.fast_mode = true;
-
-    // Send images as a structured array so the server can build proper Gemini inlineData parts.
-    // Embedding base64 in the text content would be truncated at 4000 chars and treated as text.
-    //
-    // Compress before sending: retina screenshots are 2-5 MB PNG; the Natively API body limit
-    // is 4 MB. Resize to max 1920px (above the 1470px logical resolution of a MacBook Air, so
-    // no detail is lost) and encode as JPEG 85% — typically 200-250 KB per image.
-    // 4 screenshots × ~278KB base64 = ~1.1 MB, well within the 4 MB server limit.
-    if (imagePaths?.length) {
-      const images: { mime_type: string; data: string }[] = [];
-      for (const p of imagePaths) {
-        if (fs.existsSync(p)) {
-          try {
-            const compressed = await sharp(p)
-              .resize(1920, 1920, { fit: 'inside', withoutEnlargement: true })
-              .jpeg({ quality: 85 })
-              .toBuffer();
-            images.push({ mime_type: 'image/jpeg', data: compressed.toString('base64') });
-          } catch (compressErr: any) {
-            // Fallback: send raw if sharp fails (e.g. unsupported format)
-            console.warn('[LLMHelper] Image compression failed, sending raw:', compressErr.message);
-            const imageData = await fs.promises.readFile(p);
-            if (imageData.length > 500 * 1024) {
-              console.warn('[LLMHelper] Raw fallback image too large to send, skipping:', p);
-              continue;
-            }
-            images.push({ mime_type: 'image/png', data: imageData.toString('base64') });
-          }
-        }
-      }
-      if (images.length) body.images = images;
-    }
-    if (systemPrompt) body.system = systemPrompt;
-    if (this.aiResponseLanguage && this.aiResponseLanguage !== 'English') {
-      body.language = this.aiResponseLanguage; // 'auto' is forwarded — server handles it
-    }
-
-    // 8s hard cap: a `fetch failed` network error without this can stall the provider
-    // waterfall for 25-30s before the OS-level TCP reset fires.
-    const response = await fetch(endpointUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(`Natively API error ${response.status}: ${errData.error || 'unknown'}`);
-    }
-
-    const data = await response.json();
-    return data.content || '';
+  private async generateWithNatively(_userMessage: string, _systemPrompt?: string, _imagePaths?: string[]): Promise<string> {
+    throw new Error('Original Natively AI backend is disabled in company fork. Configure a custom, OpenAI-compatible, Ollama, or Codex provider.');
   }
 
   /**
@@ -3047,132 +2963,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
    * Yields the full response in small word-batches so the UI typing effect still plays.
    * Throws on empty response so the fallback chain tries the next provider.
    */
-  private async * streamWithNatively(userContent: string, systemPrompt?: string, imagePaths?: string[]): AsyncGenerator<string, void, unknown> {
-    // ── REAL SSE STREAM (replaces the fake word-by-word simulation) ──────────
-    // Previous implementation called generateWithNatively() (blocking, waited for
-    // the full response), then drip-fed words with setTimeout delays — pure theater.
-    // This version opens a streaming fetch and yields tokens as the server generates
-    // them, cutting time-to-first-token from ~3s to ~80ms.
-    let nativelyKey = this.nativelyKey;
-    if (!nativelyKey) {
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      nativelyKey = CredentialsManager.getInstance().getNativelyApiKey() || null;
-    }
-    if (!nativelyKey) throw new Error('Natively API key not set');
-
-    const body: Record<string, unknown> = {
-      messages: [{ role: 'user', content: userContent }],
-      stream: true,
-    };
-    if (this.groqFastTextMode) body.fast_mode = true;
-    if (systemPrompt) body.system = systemPrompt;
-    if (this.aiResponseLanguage && this.aiResponseLanguage !== 'English') {
-      body.language = this.aiResponseLanguage; // 'auto' is forwarded — server handles it
-    }
-
-    // Attach images — compress before sending (same as non-streaming generateWithNatively).
-    // Retina screenshots are 2-5 MB PNG; the Natively API body limit is 4 MB.
-    // Resize to max 1920px and encode as JPEG 85% — typically 200-250 KB per image.
-    // 4 screenshots × ~278KB base64 = ~1.1 MB, well within the 4 MB server limit.
-    if (imagePaths?.length) {
-      const images: { mime_type: string; data: string }[] = [];
-      for (const p of imagePaths) {
-        if (fs.existsSync(p)) {
-          try {
-            const compressed = await sharp(p)
-              .resize(1920, 1920, { fit: 'inside', withoutEnlargement: true })
-              .jpeg({ quality: 85 })
-              .toBuffer();
-            images.push({ mime_type: 'image/jpeg', data: compressed.toString('base64') });
-          } catch (compressErr: any) {
-            // Fallback: send raw if sharp fails (e.g. unsupported format)
-            console.warn('[LLMHelper] streamWithNatively: image compression failed, sending raw:', compressErr.message);
-            const imageData = await fs.promises.readFile(p);
-            if (imageData.length > 500 * 1024) {
-              console.warn('[LLMHelper] streamWithNatively: raw fallback image too large, skipping:', p);
-              continue;
-            }
-            images.push({ mime_type: 'image/png', data: imageData.toString('base64') });
-          }
-        }
-      }
-      if (images.length) body.images = images;
-    }
-
-    // When the key is the trial sentinel, authenticate with the real trial token.
-    const streamHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'text/event-stream',
-    };
-    if (nativelyKey === TRIAL_SENTINEL_KEY) {
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      const trialToken = CredentialsManager.getInstance().getTrialToken();
-      if (!trialToken) throw new Error('Trial token not found');
-      streamHeaders['x-trial-token'] = trialToken;
-    } else {
-      streamHeaders['x-natively-key'] = nativelyKey;
-    }
-
-    // Connect-only timeout: 10s to establish the TCP+TLS+HTTP handshake.
-    // Once the server sends the first response byte (headers received), we clear
-    // the timer so the SSE stream can run as long as needed.
-    // IMPORTANT: AbortSignal.timeout() applies to the ENTIRE request lifetime, not
-    // just the connection phase — using it here would kill Flash mid-stream at 10s
-    // and Pro at 10s even when actively yielding tokens. The AbortController pattern
-    // below correctly scopes the timeout to the connection phase only.
-    const _connectController = new AbortController();
-    const _connectTimer = setTimeout(() => _connectController.abort(new Error('Natively API connect timeout (10s)')), 10_000);
-    let response: Response;
-    try {
-      response = await fetch('https://api.natively.software/v1/chat', {
-        method: 'POST',
-        headers: streamHeaders,
-        body: JSON.stringify(body),
-        signal: _connectController.signal,
-      });
-    } finally {
-      // Connection established (or failed) — stop the connect-phase timer.
-      // The stream body will now be read without any timeout.
-      clearTimeout(_connectTimer);
-    }
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}) as Record<string, unknown>);
-      throw new Error(`Natively API ${response.status}: ${(errData as any).error || 'unknown'}`);
-    }
-
-    // Parse the SSE response body incrementally.
-    // Protocol: each line starting with "data: " carries a JSON payload.
-    //   data: {"delta":"token","model":"llama-3.3-70b"}
-    //   data: [DONE]
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-
-    try {
-      outer: while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop()!;  // last line may be incomplete — carry it to next chunk
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const payload = line.slice(6).trim();
-          if (payload === '[DONE]') break outer;
-
-          let chunk: any;
-          try { chunk = JSON.parse(payload); } catch { continue; }
-
-          if (chunk.error) throw new Error(`Server error: ${chunk.error}`);
-          if (typeof chunk.delta === 'string' && chunk.delta) yield chunk.delta;
-        }
-      }
-    } finally {
-      try { reader.cancel(); } catch { }  // release the fetch connection cleanly
-    }
+  private async * streamWithNatively(_userContent: string, _systemPrompt?: string, _imagePaths?: string[]): AsyncGenerator<string, void, unknown> {
+    throw new Error('Original Natively AI backend is disabled in company fork. Configure a custom, OpenAI-compatible, Ollama, or Codex provider.');
   }
 
   /**

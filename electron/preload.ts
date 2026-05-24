@@ -76,7 +76,7 @@ interface ElectronAPI {
   onModesActiveCleared: (cb: () => void) => () => void
 
   // STT Provider Management
-  setSttProvider: (provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'natively' | 'local-whisper') => Promise<{ success: boolean; error?: string }>
+  setSttProvider: (provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'local-whisper') => Promise<{ success: boolean; error?: string }>
   localWhisperGetModels: () => Promise<{ models: any[]; activeModelId: string }>
   localWhisperSetModel: (modelId: string) => Promise<{ success: boolean }>
   localWhisperDeleteModel: (modelId: string) => Promise<{ success: boolean; error?: string }>
@@ -651,7 +651,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   // STT Provider Management
-  setSttProvider: (provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'natively' | 'local-whisper') => ipcRenderer.invoke("set-stt-provider", provider),
+  setSttProvider: (provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'local-whisper') => ipcRenderer.invoke("set-stt-provider", provider),
   getSttProvider: () => ipcRenderer.invoke("get-stt-provider"),
   setGroqSttApiKey: (apiKey: string) => ipcRenderer.invoke("set-groq-stt-api-key", apiKey),
   setOpenAiSttApiKey: (apiKey: string) => ipcRenderer.invoke("set-openai-stt-api-key", apiKey),

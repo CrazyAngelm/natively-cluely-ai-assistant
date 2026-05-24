@@ -33,7 +33,7 @@ export interface StoredCredentials {
     defaultModel?: string;
     nativelyApiKey?: string;
     // STT Provider settings
-    sttProvider?: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'natively' | 'local-whisper';
+    sttProvider?: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'local-whisper';
     groqSttApiKey?: string;
     groqSttModel?: string;
     openAiSttApiKey?: string;
@@ -115,18 +115,15 @@ export class CredentialsManager {
         return this.credentials.customProviders || [];
     }
 
-    public getSttProvider(): 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'natively' | 'local-whisper' {
-        const provider = this.credentials.sttProvider || 'none';
-        // Self-heal: if provider is 'none' but a Natively key exists, the user is in a
-        // broken state (key cleared then re-entered via a path that skipped auto-promote,
-        // or credentials restored from backup). Silently restore to 'natively' so STT works.
-        if (provider === 'none' && this.credentials.nativelyApiKey) {
-            this.credentials.sttProvider = 'natively';
+    public getSttProvider(): 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'local-whisper' {
+        const provider = this.credentials.sttProvider as any;
+        if (provider === 'natively') {
+            this.credentials.sttProvider = 'none';
             this.saveCredentials();
-            console.log('[CredentialsManager] Self-healed sttProvider: none→natively (Natively key present)');
-            return 'natively';
+            console.log('[CredentialsManager] Migrated legacy Natively STT provider to none');
+            return 'none';
         }
-        return provider;
+        return provider || 'none';
     }
 
     public getDeepgramApiKey(): string | undefined {
@@ -185,15 +182,33 @@ export class CredentialsManager {
         return this.credentials.aiResponseLanguage || 'auto';
     }
     public getDefaultModel(): string {
-        return this.credentials.defaultModel || 'gemini-3.1-flash-lite-preview';
+        if (this.credentials.defaultModel === 'natively') {
+            this.credentials.defaultModel = undefined;
+            this.saveCredentials();
+            console.log('[CredentialsManager] Migrated legacy Natively default model to unset');
+        }
+        return this.credentials.defaultModel || this.getFirstConfiguredModel() || '';
     }
 
     public getNativelyApiKey(): string | undefined {
-        return this.credentials.nativelyApiKey;
+        return undefined;
     }
 
     public getAllCredentials(): StoredCredentials {
-        return { ...this.credentials };
+        return { ...this.credentials, nativelyApiKey: undefined, trialToken: undefined, trialExpiresAt: undefined, trialStartedAt: undefined, trialClaimed: false };
+    }
+
+    private getFirstConfiguredModel(): string | undefined {
+        const curl = this.credentials.curlProviders?.[0]?.id;
+        if (curl) return curl;
+        const custom = this.credentials.customProviders?.[0]?.id;
+        if (custom) return custom;
+        if ((this.credentials as any).codexCliPath) return 'codex-cli';
+        if (this.credentials.openaiApiKey) return this.credentials.openaiPreferredModel || 'gpt-5.4';
+        if (this.credentials.claudeApiKey) return this.credentials.claudePreferredModel || 'claude-sonnet-4-6';
+        if (this.credentials.groqApiKey) return this.credentials.groqPreferredModel || 'llama-3.3-70b-versatile';
+        if (this.credentials.geminiApiKey) return this.credentials.geminiPreferredModel || 'gemini-3.1-flash-lite-preview';
+        return undefined;
     }
 
     // =========================================================================
@@ -205,7 +220,6 @@ export class CredentialsManager {
      * Used by ScreenUnderstandingService to gate vision_only / decide fallback.
      */
     public anyVisionProviderConfigured(): boolean {
-        if (this.credentials.nativelyApiKey) return true;       // Natively API supports vision
         if (this.credentials.openaiApiKey) return true;          // gpt-4o / gpt-5 vision
         if (this.credentials.claudeApiKey) return true;          // Claude vision
         if (this.credentials.geminiApiKey) return true;          // Gemini vision
@@ -266,7 +280,7 @@ export class CredentialsManager {
         console.log('[CredentialsManager] Google Service Account path updated');
     }
 
-    public setSttProvider(provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'natively' | 'local-whisper'): void {
+    public setSttProvider(provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' | 'local-whisper'): void {
         this.credentials.sttProvider = provider;
         this.saveCredentials();
         console.log(`[CredentialsManager] STT Provider set to: ${provider}`);
@@ -360,49 +374,17 @@ export class CredentialsManager {
         console.log(`[CredentialsManager] AI Response Language set to: ${language}`);
     }
     public setDefaultModel(model: string): void {
-        this.credentials.defaultModel = model;
+        this.credentials.defaultModel = model === 'natively' ? undefined : model;
         this.saveCredentials();
-        console.log(`[CredentialsManager] Default Model set to: ${model}`);
+        console.log(`[CredentialsManager] Default Model set to: ${this.credentials.defaultModel || '(unset)'}`);
     }
 
-    public setNativelyApiKey(key: string): void {
-        const trimmed = key.trim();
-        this.credentials.nativelyApiKey = trimmed || undefined;
-
-        if (trimmed) {
-            // Auto-promote natively to default model unless user already chose a non-Gemini/Groq model
-            const current = this.credentials.defaultModel || '';
-            const isAutoDefault = !current
-                || current.startsWith('gemini-')
-                || current.startsWith('llama-')
-                || current.startsWith('mixtral-')
-                || current.startsWith('gemma-')
-                || current === 'gemini'
-                || current === 'llama';
-            if (isAutoDefault) {
-                this.credentials.defaultModel = 'natively';
-                console.log('[CredentialsManager] Auto-set default model to natively');
-            }
-
-            // Auto-promote natively STT if still on 'none' or the default Google STT
-            if (!this.credentials.sttProvider || this.credentials.sttProvider === 'none' || this.credentials.sttProvider === 'google') {
-                this.credentials.sttProvider = 'natively';
-                console.log('[CredentialsManager] Auto-set STT provider to natively');
-            }
-        } else {
-            // Key cleared — revert natively-auto-set defaults back to safe fallbacks
-            if (this.credentials.defaultModel === 'natively') {
-                this.credentials.defaultModel = 'gemini-3.1-flash-lite-preview';
-                console.log('[CredentialsManager] Natively key cleared — reset default model to Gemini Flash');
-            }
-            if (this.credentials.sttProvider === 'natively') {
-                this.credentials.sttProvider = 'none';
-                console.log('[CredentialsManager] Natively key cleared — reset STT provider to none');
-            }
-        }
-
+    public setNativelyApiKey(_key: string): void {
+        delete this.credentials.nativelyApiKey;
+        if (this.credentials.defaultModel === 'natively') this.credentials.defaultModel = undefined;
+        if ((this.credentials.sttProvider as any) === 'natively') this.credentials.sttProvider = 'none';
         this.saveCredentials();
-        console.log('[CredentialsManager] Natively API Key updated');
+        console.log('[CredentialsManager] Ignored legacy Natively API key in company fork');
     }
 
     public getPreferredModel(provider: 'gemini' | 'groq' | 'openai' | 'claude'): string | undefined {
@@ -466,28 +448,23 @@ export class CredentialsManager {
 
     // ── Free Trial ─────────────────────────────────────────────
     public getTrialToken(): string | undefined {
-        return this.credentials.trialToken;
+        return undefined;
     }
 
     public getTrialExpiresAt(): string | undefined {
-        return this.credentials.trialExpiresAt;
+        return undefined;
     }
 
     public getTrialStartedAt(): string | undefined {
-        return this.credentials.trialStartedAt;
+        return undefined;
     }
 
     public getTrialClaimed(): boolean {
-        return this.credentials.trialClaimed === true;
+        return true;
     }
 
-    public setTrialToken(token: string, expiresAt: string, startedAt: string): void {
-        this.credentials.trialToken = token;
-        this.credentials.trialExpiresAt = expiresAt;
-        this.credentials.trialStartedAt = startedAt;
-        this.credentials.trialClaimed = true;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Trial token stored, expires:', expiresAt);
+    public setTrialToken(_token: string, _expiresAt: string, _startedAt: string): void {
+        this.clearTrialToken();
     }
 
     public clearTrialToken(): void {
@@ -548,6 +525,33 @@ export class CredentialsManager {
         }
     }
 
+    private migrateCompanyForkCredentials(): void {
+        let changed = false;
+        if (this.credentials.nativelyApiKey) {
+            delete this.credentials.nativelyApiKey;
+            changed = true;
+        }
+        if (this.credentials.defaultModel === 'natively') {
+            this.credentials.defaultModel = this.getFirstConfiguredModel();
+            changed = true;
+        }
+        if ((this.credentials.sttProvider as any) === 'natively') {
+            this.credentials.sttProvider = 'none';
+            changed = true;
+        }
+        if (this.credentials.trialToken || this.credentials.trialExpiresAt || this.credentials.trialStartedAt || this.credentials.trialClaimed) {
+            delete this.credentials.trialToken;
+            delete this.credentials.trialExpiresAt;
+            delete this.credentials.trialStartedAt;
+            delete this.credentials.trialClaimed;
+            changed = true;
+        }
+        if (changed) {
+            this.saveCredentials();
+            console.log('[CredentialsManager] Migrated legacy Natively billing/runtime credentials for company fork');
+        }
+    }
+
     private loadCredentials(): void {
         try {
             // Try encrypted file first
@@ -582,6 +586,7 @@ export class CredentialsManager {
                         console.warn('[CredentialsManager] Could not remove stale plaintext file:', cleanupErr);
                     }
                 }
+                this.migrateCompanyForkCredentials();
                 return;
             }
 

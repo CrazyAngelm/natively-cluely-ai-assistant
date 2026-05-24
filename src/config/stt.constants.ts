@@ -3,7 +3,7 @@
  * Configuration for STT providers (Google gRPC, REST, WebSocket)
  */
 
-export type SttProviderId = 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'natively';
+export type SttProviderId = 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson';
 
 export interface SttProviderConfig {
     id: SttProviderId;
@@ -11,30 +11,26 @@ export interface SttProviderConfig {
     description: string;
     endpoint: string;
     model: string;
-    /** Available models for this provider (for user selection) */
     availableModels?: { id: string; label: string }[];
-    /** Upload type: 'multipart' for FormData, 'binary' for raw body, 'websocket' for streaming */
     uploadType?: 'multipart' | 'binary' | 'websocket';
     authHeader: (apiKey: string) => Record<string, string>;
-    /** Path to extract transcript text from the JSON response */
     responseContentPath: string;
-    /** Extra form fields to include in the multipart upload */
     extraFormFields?: Record<string, string>;
 }
 
 export const STT_PROVIDERS: Record<SttProviderId, SttProviderConfig> = {
     google: {
         id: 'google',
-        name: 'Google Cloud (Default)',
+        name: 'Google Cloud',
         description: 'Uses gRPC streaming via Google Cloud Service Account',
-        endpoint: '', // Google uses gRPC, not REST
+        endpoint: '',
         model: '',
         authHeader: () => ({}),
         responseContentPath: '',
     },
     groq: {
         id: 'groq',
-        name: 'Groq Whisper (Fast)',
+        name: 'Groq Whisper',
         description: 'Ultra-fast transcription via Groq API',
         endpoint: 'https://api.groq.com/openai/v1/audio/transcriptions',
         model: 'whisper-large-v3-turbo',
@@ -43,9 +39,7 @@ export const STT_PROVIDERS: Record<SttProviderId, SttProviderConfig> = {
             { id: 'whisper-large-v3-turbo', label: 'Whisper Large V3 Turbo (Fastest)' },
             { id: 'whisper-large-v3', label: 'Whisper Large V3 (Most Accurate)' },
         ],
-        authHeader: (apiKey: string) => ({
-            Authorization: `Bearer ${apiKey}`,
-        }),
+        authHeader: (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` }),
         responseContentPath: 'text',
         extraFormFields: {
             temperature: '0',
@@ -60,9 +54,7 @@ export const STT_PROVIDERS: Record<SttProviderId, SttProviderConfig> = {
         endpoint: 'https://api.openai.com/v1/audio/transcriptions',
         model: 'whisper-1',
         uploadType: 'multipart',
-        authHeader: (apiKey: string) => ({
-            Authorization: `Bearer ${apiKey}`,
-        }),
+        authHeader: (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` }),
         responseContentPath: 'text',
     },
     deepgram: {
@@ -72,9 +64,7 @@ export const STT_PROVIDERS: Record<SttProviderId, SttProviderConfig> = {
         endpoint: 'wss://api.deepgram.com/v1/listen',
         model: 'nova-3',
         uploadType: 'websocket',
-        authHeader: (apiKey: string) => ({
-            Authorization: `Token ${apiKey}`,
-        }),
+        authHeader: (apiKey: string) => ({ Authorization: `Token ${apiKey}` }),
         responseContentPath: 'channel.alternatives[0].transcript',
     },
     elevenlabs: {
@@ -84,9 +74,7 @@ export const STT_PROVIDERS: Record<SttProviderId, SttProviderConfig> = {
         endpoint: 'https://api.elevenlabs.io/v1/speech-to-text',
         model: 'scribe_v2',
         uploadType: 'multipart',
-        authHeader: (apiKey: string) => ({
-            'xi-api-key': apiKey,
-        }),
+        authHeader: (apiKey: string) => ({ 'xi-api-key': apiKey }),
         responseContentPath: 'text',
     },
     azure: {
@@ -96,9 +84,7 @@ export const STT_PROVIDERS: Record<SttProviderId, SttProviderConfig> = {
         endpoint: 'https://{region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1',
         model: '',
         uploadType: 'binary',
-        authHeader: (apiKey: string) => ({
-            'Ocp-Apim-Subscription-Key': apiKey,
-        }),
+        authHeader: (apiKey: string) => ({ 'Ocp-Apim-Subscription-Key': apiKey }),
         responseContentPath: 'DisplayText',
     },
     ibmwatson: {
@@ -108,24 +94,11 @@ export const STT_PROVIDERS: Record<SttProviderId, SttProviderConfig> = {
         endpoint: 'https://api.{region}.speech-to-text.watson.cloud.ibm.com/v1/recognize',
         model: '',
         uploadType: 'binary',
-        authHeader: (apiKey: string) => ({
-            Authorization: `Basic ${btoa(`apikey:${apiKey}`)}`,
-        }),
+        authHeader: (apiKey: string) => ({ Authorization: `Basic ${btoa(`apikey:${apiKey}`)}` }),
         responseContentPath: 'results[0].alternatives[0].transcript',
-    },
-    natively: {
-        id: 'natively',
-        name: 'Natively Pro (Managed)',
-        description: 'All-in-one managed STT via Natively API',
-        endpoint: '', 
-        model: '',
-        uploadType: 'websocket',
-        authHeader: () => ({}),
-        responseContentPath: '',
     },
 };
 
 export const STT_PROVIDER_OPTIONS = Object.values(STT_PROVIDERS);
 
 export const DEFAULT_STT_PROVIDER: SttProviderId = 'google';
-

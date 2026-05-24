@@ -229,14 +229,13 @@ import { DeepgramStreamingSTT } from "./audio/DeepgramStreamingSTT"
 import { SonioxStreamingSTT } from "./audio/SonioxStreamingSTT"
 import { ElevenLabsStreamingSTT } from "./audio/ElevenLabsStreamingSTT"
 import { OpenAIStreamingSTT } from "./audio/OpenAIStreamingSTT"
-import { NativelyProSTT } from "./audio/NativelyProSTT"
 import { ThemeManager } from "./ThemeManager"
 import { RAGManager } from "./rag/RAGManager"
 import { DatabaseManager } from "./db/DatabaseManager"
 import { warmupIntentClassifier } from "./llm"
 
 /** Unified type for all STT providers with optional extended capabilities */
-type STTProvider = (GoogleSTT | RestSTT | DeepgramStreamingSTT | SonioxStreamingSTT | ElevenLabsStreamingSTT | OpenAIStreamingSTT | NativelyProSTT) & {
+type STTProvider = (GoogleSTT | RestSTT | DeepgramStreamingSTT | SonioxStreamingSTT | ElevenLabsStreamingSTT | OpenAIStreamingSTT) & {
   finalize?: () => void;
   setAudioChannelCount?: (count: number) => void;
   notifySpeechEnded?: () => void;
@@ -1030,19 +1029,7 @@ export class AppState {
 
     let stt: STTProvider;
 
-    if (sttProvider === 'natively') {
-      const nativelyKey = CredentialsManager.getInstance().getNativelyApiKey();
-      if (!nativelyKey) {
-        // Natively is Coming Soon — no key means degrade gracefully like every other provider
-        console.warn(`[Main] No Natively API Key configured for ${speaker}, falling back to GoogleSTT`);
-        stt = new GoogleSTT(speaker);
-      } else {
-        // 'system' for interviewer (system audio), 'mic' for user (microphone).
-        // The server uses ${key}:${channel} as the session key so both streams
-        // can coexist without triggering concurrent_session_blocked.
-        stt = new NativelyProSTT(nativelyKey, speaker === 'interviewer' ? 'system' : 'mic');
-      }
-    } else if (sttProvider === 'deepgram') {
+    if (sttProvider === 'deepgram') {
       const apiKey = CredentialsManager.getInstance().getDeepgramApiKey();
       if (apiKey) {
         console.log(`[Main] Using DeepgramStreamingSTT for ${speaker}`);
@@ -1272,34 +1259,6 @@ export class AppState {
         }
       }
     });
-
-    // Auto language detection: NativelyProSTT emits 'languageDetected' when the
-    // backend resolves the language from the first audio batch. Notify the renderer
-    // so the settings UI can show what was detected.
-    if (stt instanceof NativelyProSTT) {
-      stt.on('languageDetected', (bcp47: string) => {
-        console.log(`[Main] STT language auto-detected (${speaker}): ${bcp47}`);
-        const helper = this.getWindowHelper();
-        helper.getMainWindow()?.webContents.send('stt-language-auto-detected', bcp47);
-        helper.getLauncherWindow()?.webContents.send('stt-language-auto-detected', bcp47);
-      });
-
-      // Persistent-reconnect signal: NativelyProSTT now retries indefinitely
-      // with a 30s backoff cap, but we want the user to know after ~5 attempts
-      // (~30–90s of dead transcript) that the issue is sustained, not a blip.
-      // Reuse the stt-status channel with state='reconnecting' and a higher
-      // attempts count so the renderer's existing banner picks it up.
-      stt.on('persistent-reconnect', (info: { attempts: number }) => {
-        console.warn(`[Main] STT persistent reconnect (${speaker}): ${info.attempts} consecutive attempts.`);
-        this.broadcast('stt-status', {
-          state: 'reconnecting',
-          provider: sttProvider,
-          error: `Reconnecting to transcription service — ${info.attempts} consecutive attempts. Check your network connection.`,
-          channel: speaker,
-          reconnectAttempts: info.attempts,
-        } as SttStatusPayload);
-      });
-    }
 
     return stt;
   }
@@ -3130,9 +3089,7 @@ export class AppState {
     const { CredentialsManager } = require('./services/CredentialsManager');
     CredentialsManager.getInstance().setSttLanguage(key);
 
-    // 'auto' is only meaningful for NativelyProSTT — other providers fall back to en-US.
-    const sttProvider = CredentialsManager.getInstance().getSttProvider();
-    const effectiveKey = (key === 'auto' && sttProvider !== 'natively') ? 'english-us' : key;
+    const effectiveKey = key === 'auto' ? 'english-us' : key;
 
     this.googleSTT?.setRecognitionLanguage(effectiveKey);
     this.googleSTT_User?.setRecognitionLanguage(effectiveKey);
