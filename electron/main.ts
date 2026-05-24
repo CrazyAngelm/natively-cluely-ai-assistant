@@ -644,8 +644,9 @@ export class AppState {
     // Initialize RAGManager (requires database to be ready)
     this.initializeRAGManager()
 
-    // Check and prep Ollama embedding model
-    this.bootstrapOllamaEmbeddings()
+    if (process.env.NATIVELY_ENABLE_OLLAMA_BOOTSTRAP === '1') {
+      this.bootstrapOllamaEmbeddings()
+    }
 
 
     this.setupIntelligenceEvents()
@@ -1328,6 +1329,7 @@ export class AppState {
     // Production-grade apps surface this so the user knows their interviewer's
     // audio isn't being picked up — instead of staring at an empty transcript.
     let stuckTimer: NodeJS.Timeout | null = null;
+    const stuckWatchdogMs = process.platform === 'win32' ? 30000 : 8000;
     const armStuckWatchdog = () => {
       if (stuckTimer) clearTimeout(stuckTimer);
       stuckTimer = setTimeout(() => {
@@ -1335,18 +1337,6 @@ export class AppState {
         if (chunkCount > 0) return;                       // already producing
         if (!this.isMeetingActive) return;                // meeting ended
 
-        // Bluetooth devices like AirPods register with separate identifiers
-        // for input (cpal device name) and output (CoreAudio UID with
-        // optional :input/:output suffix). When the user has the same
-        // physical device on both sides of the pipeline, macOS cannot run a
-        // CoreAudio Process Tap on it while it's also the active microphone
-        // — the tap initializes "successfully" but every IO callback yields
-        // zero frames. The 8s watchdog is the most reliable signal we get.
-        // Surface the actual cause instead of a generic "route mismatch"
-        // hint so the user knows what to change.
-        // The same-device-input-output limitation is a CoreAudio Process Tap
-        // constraint — only relevant on macOS. detectSameInputOutputDevice
-        // is itself macOS-specific; skip the check on other platforms.
         const sameDeviceName = process.platform === 'darwin'
           ? this.detectSameInputOutputDevice()
           : null;
@@ -1364,16 +1354,18 @@ export class AppState {
           return;
         }
 
-        console.warn(`${prefix}SystemAudioCapture produced 0 chunks in 8s — likely silent capture (route mismatch or permission revoked).`);
+        console.warn(`${prefix}SystemAudioCapture produced 0 chunks in ${stuckWatchdogMs / 1000}s — likely silent capture or route mismatch.`);
         this.broadcast('audio-capture-failed', {
           channel: 'system',
-          message: formatPermissionMessage('system-audio-stuck'),
+          message: process.platform === 'win32'
+            ? `No audio detected on system output for ${stuckWatchdogMs / 1000}s. Start playback in the meeting/browser and make sure it uses the Windows default output device, then restart the meeting.`
+            : formatPermissionMessage('system-audio-stuck'),
           attempt: 0,
           maxAttempts: 3,
           terminal: false,
           stuck: true,
         });
-      }, 8000);
+      }, stuckWatchdogMs);
     };
 
     // TCC zero-fill detector. Apple's CoreAudio Process Tap returns zero-filled
@@ -1559,7 +1551,7 @@ export class AppState {
           zerofillLatched = true;
         } else if (now - firstChunkAt >= ZEROFILL_OBSERVATION_MS) {
           zerofillTriggered = true;
-          console.warn(`${prefix}Mic chunks all zero-filled for ${ZEROFILL_OBSERVATION_MS / 1000}s — TCC denial or device-mute suspected.`);
+          console.warn(`${prefix}Mic chunks all zero-filled for ${ZEROFILL_OBSERVATION_MS / 1000}s — permission, mute, or device contention suspected.`);
           this.broadcast('audio-capture-failed', {
             channel: 'mic',
             message: formatPermissionMessage('mic-zero-fill'),
@@ -4018,8 +4010,9 @@ async function initializeApp() {
   // Apply the full disguise payload (names, dock icon, AUMID) early
   appState.applyInitialDisguise();
 
-  // Start the Ollama lifecycle manager
-  OllamaManager.getInstance().init().catch(console.error);
+  if (process.env.NATIVELY_ENABLE_OLLAMA_BOOTSTRAP === '1') {
+    OllamaManager.getInstance().init().catch(console.error);
+  }
 
   // NOTE: CredentialsManager.init() and loadStoredCredentials() are already called
   // above before this block — do NOT call them again here to avoid double key-load.

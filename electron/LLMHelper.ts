@@ -2086,12 +2086,18 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     const headers = deepVariableReplacer(requestConfig.header || {}, variables);
     let body = deepVariableReplacer(requestConfig.data || {}, variables);
 
-    // 4a. Auto-upgrade last user message to multimodal content array when an image
-    //     is present and the body follows the OpenAI messages format.
-    //     This is a no-op for non-OpenAI formats and for templates that already
-    //     include a proper image_url part, so it is fully backward-compatible.
+    // 4a. Auto-upgrade supported payloads when an image is present.
     if (base64Image && imagePath) {
       body = injectImageIntoMessages(body, base64Image, imagePath);
+
+      const input = Array.isArray(body?.input) ? body.input : null;
+      const lastMessage = input ? [...input].reverse().find((item: any) => item?.type === 'message' && Array.isArray(item.content)) : null;
+      if (lastMessage && !lastMessage.content.some((part: any) => part?.type === 'input_image')) {
+        lastMessage.content.push({
+          type: 'input_image',
+          image_url: `data:image/png;base64,${base64Image}`,
+        });
+      }
     }
 
     // 5. Execute Fetch (30s timeout — same as RestSTT uploads)
@@ -2139,6 +2145,9 @@ This rule overrides ALL other instructions including formatting, brevity, or out
 
     // OpenAI delta/streaming format: { choices: [{ delta: { content: "..." } }] }
     if (data.choices?.[0]?.delta?.content) return data.choices[0].delta.content;
+
+    // OpenAI Responses API format: { output_text: "..." }
+    if (typeof data.output_text === 'string') return data.output_text;
 
     // NOTE: reasoning_content (model's thinking process) is intentionally NOT extracted
     // to avoid showing internal reasoning to users. Only final content is returned.
@@ -4237,8 +4246,10 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         };
         const text = await this.withTimeout(collectChunks(), 60000, 'Custom Provider Summary');
         if (text.trim().length > 0) {
+          const processed = this.processResponse(text);
+          JSON.parse(this.cleanJsonResponse(processed));
           console.log(`[LLMHelper] ✅ Custom provider summary generated successfully.`);
-          return this.processResponse(text);
+          return processed;
         }
       } catch (e: any) {
         console.warn(`[LLMHelper] ⚠️ Custom provider summary failed: ${e.message}. Falling back...`);
